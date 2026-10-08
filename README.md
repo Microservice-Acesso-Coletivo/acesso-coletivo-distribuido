@@ -116,7 +116,7 @@ Além das camadas, cada serviço tem:
 Pré-requisitos: Windows com PowerShell, Python 3.10 ou mais novo e Git.
 
 ```powershell
-git clone https://github.com/JoaopedroCODES/acesso-coletivo-distribuido.git
+git clone https://github.com/Microservice-Acesso-Coletivo/acesso-coletivo-distribuido.git
 cd acesso-coletivo-distribuido
 
 python -m venv .venv
