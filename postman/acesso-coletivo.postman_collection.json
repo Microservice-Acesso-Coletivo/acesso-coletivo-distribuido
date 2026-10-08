@@ -1,0 +1,369 @@
+{
+  "info": {
+    "name": "Acesso Coletivo",
+    "description": "Endpoints da acesso_api (porta 8080) na ordem do fluxo de demonstração. Suba os três serviços com run-all.ps1 e execute de cima para baixo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8080"
+    },
+    {
+      "key": "usuario_id",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Fluxo de demonstração",
+      "item": [
+        {
+          "name": "01 - Cadastrar usuário (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/usuarios",
+            "description": "A API valida o corpo e repassa ao usuario_service. A resposta não traz a senha. O id criado é guardado na variável usuario_id. Se o email já existir, a resposta é 409: nesse caso siga para o login.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Ana Beatriz\",\n  \"email\": \"ana@email.com\",\n  \"senha\": \"senha123\",\n  \"preferencia_alerta\": \"AMBOS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda o id do usuário criado para as próximas requisições usarem {{usuario_id}}.",
+                  "if (pm.response.code === 201) {",
+                  "    pm.collectionVariables.set('usuario_id', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 - Login (200)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/usuarios/login",
+            "description": "Confere email e senha no usuario_service (hash PBKDF2 com salt).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ana@email.com\",\n  \"senha\": \"senha123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda o id do usuário logado. Útil quando o cadastro já existia (409).",
+                  "if (pm.response.code === 200) {",
+                  "    pm.collectionVariables.set('usuario_id', pm.response.json().usuario.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 - Buscar usuário (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/usuarios/{{usuario_id}}",
+            "description": "Repassa ao usuario_service."
+          }
+        },
+        {
+          "name": "04 - Listar paradas (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/paradas",
+            "description": "Repassa ao transporte_service. Na primeira execução já vêm os terminais da carga inicial."
+          }
+        },
+        {
+          "name": "05 - Cadastrar parada (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/paradas",
+            "description": "Repassa ao transporte_service.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Parada UNIFAPI\",\n  \"latitude\": -5.06,\n  \"longitude\": -42.79,\n  \"terminal\": false,\n  \"linhas\": \"301\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "06 - Gerar alerta perto do Terminal Dirceu: DESEMBARQUE (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/alertas",
+            "description": "Fluxo principal. A API chama o transporte_service, que chama o usuario_service (duas comunicações síncronas). A cerca de 80 m da parada o nível é DESEMBARQUE. O alerta é gravado no histórico.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario_id\": {{usuario_id}},\n  \"latitude\": -5.1062,\n  \"longitude\": -42.7527\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "07 - Gerar alerta a 200 m: PROXIMO (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/alertas",
+            "description": "Entre 100 m e 300 m o nível é PROXIMO.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario_id\": {{usuario_id}},\n  \"latitude\": -5.1051,\n  \"longitude\": -42.7527\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "08 - Gerar alerta a 770 m: LONGE (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/alertas",
+            "description": "Acima de 300 m o nível é LONGE.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario_id\": {{usuario_id}},\n  \"latitude\": -5.1000,\n  \"longitude\": -42.7527\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "09 - Ver histórico de alertas (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/alertas/historico?usuario_id={{usuario_id}}",
+            "description": "Lê o banco SQLite da própria acesso_api. Vem do mais recente para o mais antigo."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Erros",
+      "item": [
+        {
+          "name": "10 - Buscar usuário inexistente (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/usuarios/9999",
+            "description": "O usuario_service responde 404 e a API repassa o mesmo status e o mesmo corpo."
+          }
+        },
+        {
+          "name": "11 - Gerar alerta para usuário inexistente (404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/alertas",
+            "description": "O 404 nasce no usuario_service, passa pelo transporte_service e chega ao cliente pela API.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario_id\": 9999,\n  \"latitude\": -5.1062,\n  \"longitude\": -42.7527\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "12 - Cadastrar usuário com dados inválidos (422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/usuarios",
+            "description": "Nome curto, email sem @ e senha curta. O Pydantic barra no DTO e a requisição nem sai da API.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"A\",\n  \"email\": \"nao-e-email\",\n  \"senha\": \"123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "13 - Gerar alerta com latitude inválida (422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/alertas",
+            "description": "Latitude fora da faixa de -90 a 90. Barrado no DTO da API.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario_id\": {{usuario_id}},\n  \"latitude\": -95,\n  \"longitude\": -42.7527\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "14 - Cadastrar email repetido (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/usuarios",
+            "description": "Mesmo email da requisição 01. O usuario_service responde 409 e a API repassa.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Ana Beatriz\",\n  \"email\": \"ana@email.com\",\n  \"senha\": \"senha123\",\n  \"preferencia_alerta\": \"AMBOS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "15 - Login com senha errada (401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/usuarios/login",
+            "description": "O usuario_service responde 401 e a API repassa.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ana@email.com\",\n  \"senha\": \"senha-errada\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "16 - Gerar alerta com serviço fora do ar (503)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/alertas",
+            "description": "ANTES de enviar, derrube o transporte_service (feche o processo da porta 8082). A API responde 503 com mensagem clara e não grava nada no histórico. Com os três serviços no ar esta requisição responde 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario_id\": {{usuario_id}},\n  \"latitude\": -5.1062,\n  \"longitude\": -42.7527\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
