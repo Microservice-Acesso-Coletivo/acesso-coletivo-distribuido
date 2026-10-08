@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Ambiente virtual
+.venv/
+
+# Bancos SQLite e logs gerados em tempo de execução
+data/
+logs/
+*.log
+
+# Editor
+.vscode/
+.idea/
