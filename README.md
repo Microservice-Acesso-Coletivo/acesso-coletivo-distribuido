@@ -169,6 +169,10 @@ Invoke-RestMethod -Method Post -Uri "$api/alertas" -ContentType 'application/jso
 Invoke-RestMethod -Uri "$api/alertas/historico?usuario_id=1"
 ```
 
+No Windows PowerShell 5.1 o `Invoke-RestMethod` mostra os acentos trocados (por exemplo `estÃ¡` no
+lugar de `está`). É só a exibição do PowerShell 5.1: a resposta está correta em UTF-8, e no Postman
+e no `/docs` os acentos aparecem normalmente.
+
 ### Coleção Postman
 
 Importe `postman/acesso-coletivo.postman_collection.json` no Postman. As requisições estão na ordem
