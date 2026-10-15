@@ -18,9 +18,3 @@ class TransporteClient:
 
     def criar_parada(self, dados: dict) -> dict:
         return chamar_servico(NOME_SERVICO, "POST", f"{URL_TRANSPORTE_SERVICE}/paradas", corpo=dados)
-
-    def gerar_alerta(self, dados: dict) -> dict:
-        """Envia usuário e posição e recebe o alerta calculado na hora."""
-        return chamar_servico(
-            NOME_SERVICO, "GET", f"{URL_TRANSPORTE_SERVICE}/paradas/alerta", parametros=dados
-        )

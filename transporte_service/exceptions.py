@@ -53,6 +53,17 @@ class UsuarioServiceIndisponivel(ErroDeDominio):
         )
 
 
+class BrokerIndisponivel(ErroDeDominio):
+    # 503 = este serviço está de pé, mas não conseguiu falar com o RabbitMQ.
+    status_code = 503
+    codigo = "BROKER_INDISPONIVEL"
+
+    def __init__(self):
+        super().__init__(
+            "O serviço de mensageria está fora do ar. Tente novamente em instantes."
+        )
+
+
 def tratar_erro_de_dominio(request: Request, erro: ErroDeDominio) -> JSONResponse:
     """Monta o corpo JSON padrão de erro: status, código e mensagem."""
     corpo = {

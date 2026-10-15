@@ -1,13 +1,17 @@
 # Sobe os 3 servicos do Acesso Coletivo em background (Windows PowerShell 5.1).
 # Uso:  .\run-all.ps1        Para derrubar:  .\stop-all.ps1
+# Antes, suba o RabbitMQ:  docker compose up -d
 # Este arquivo nao tem acentos de proposito: o PowerShell 5.1 le .ps1 sem BOM como ANSI.
 
 $raiz = $PSScriptRoot
 $python = Join-Path $raiz '.venv\Scripts\python.exe'
 $pastaLogs = Join-Path $raiz 'logs'
 $segundosDeEspera = 30
+$portaBroker = 5672
 
-# O usuario_service sobe primeiro porque os outros dois dependem dele.
+# O usuario_service sobe primeiro porque os outros dois dependem dele. A acesso_api
+# sobe por ultimo: os consumidores (usuario e transporte) criam suas filas no
+# RabbitMQ ao iniciar, e so entao a API comeca a publicar eventos nelas.
 $servicos = @(
     @{ Nome = 'usuario_service';    Porta = 8081 },
     @{ Nome = 'transporte_service'; Porta = 8082 },
@@ -23,6 +27,13 @@ if (-not (Test-Path $python)) {
     Write-Host "Nao encontrei $python"
     Write-Host "Crie o ambiente antes:  python -m venv .venv"
     Write-Host "E instale as dependencias:  .\.venv\Scripts\python.exe -m pip install -r requirements.txt"
+    exit 1
+}
+
+# Sem o RabbitMQ os servicos sobem, mas o alerta (assincrono) nao funciona.
+if (-not (Test-PortaEmUso $portaBroker)) {
+    Write-Host "RabbitMQ nao encontrado na porta $portaBroker."
+    Write-Host "Suba o broker antes:  docker compose up -d"
     exit 1
 }
 
@@ -67,4 +78,5 @@ Write-Host "Tudo no ar:"
 foreach ($servico in $servicos) {
     Write-Host "  $($servico.Nome)  http://127.0.0.1:$($servico.Porta)/docs"
 }
+Write-Host "  RabbitMQ (painel)    http://127.0.0.1:15672  (guest / guest)"
 Write-Host "Logs em .\logs    Para derrubar: .\stop-all.ps1"

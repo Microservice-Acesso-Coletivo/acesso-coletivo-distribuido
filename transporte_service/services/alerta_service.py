@@ -1,6 +1,8 @@
 # Camada Service: regra do alerta de proximidade, o coração do app.
 # Busca o usuário no usuario_service (chamada síncrona), acha a parada mais
 # próxima da posição informada e monta o aviso conforme a distância.
+# O mesmo cálculo atende dois caminhos: o endpoint HTTP GET /paradas/alerta e o
+# evento "alerta.solicitado" vindo do broker (processar_solicitacao).
 
 import math
 
@@ -11,7 +13,17 @@ from transporte_service.clients.usuario_client import UsuarioClient
 from transporte_service.database import get_db
 from transporte_service.dtos.parada_request import AlertaRequest
 from transporte_service.dtos.parada_response import AlertaResponse, NivelAlerta, ParadaResponse
-from transporte_service.exceptions import NenhumaParadaCadastrada
+from transporte_service.exceptions import (
+    NenhumaParadaCadastrada,
+    UsuarioNaoEncontrado,
+)
+from transporte_service.messaging.broker import CHAVE_ALERTA_FALHOU, CHAVE_ALERTA_GERADO
+from transporte_service.messaging.eventos import (
+    AlertaFalhouEvent,
+    AlertaGeradoEvent,
+    AlertaSolicitadoEvent,
+)
+from transporte_service.messaging.publisher import EventoPublisher
 from transporte_service.models.parada import Parada
 from transporte_service.repositories.parada_repository import ParadaRepository
 
@@ -58,9 +70,15 @@ def definir_nivel(distancia_metros: int) -> NivelAlerta:
 
 
 class AlertaService:
-    def __init__(self, repository: ParadaRepository, usuario_client: UsuarioClient):
+    def __init__(
+        self,
+        repository: ParadaRepository,
+        usuario_client: UsuarioClient,
+        publisher: EventoPublisher,
+    ):
         self.repository = repository
         self.usuario_client = usuario_client
+        self.publisher = publisher
 
     def gerar_alerta(self, dados: AlertaRequest) -> AlertaResponse:
         # O usuário vem primeiro: se ele não existir ou o usuario_service
@@ -77,6 +95,41 @@ class AlertaService:
             mensagem=MENSAGENS_POR_NIVEL[nivel].format(parada=parada.nome, distancia=distancia),
         )
 
+    def processar_solicitacao(self, evento: AlertaSolicitadoEvent) -> None:
+        """Trata o pedido vindo do broker e publica o resultado (gerado ou falhou)."""
+        pedido = AlertaRequest(
+            usuario_id=evento.usuario_id,
+            latitude=evento.latitude,
+            longitude=evento.longitude,
+        )
+        try:
+            alerta = self.gerar_alerta(pedido)
+        except (UsuarioNaoEncontrado, NenhumaParadaCadastrada) as erro:
+            # Erro de negócio: tentar de novo daria o mesmo erro. Em vez de
+            # devolver um 404 (não há quem espere resposta), avisa por evento.
+            falha = AlertaFalhouEvent(
+                solicitacao_id=evento.solicitacao_id,
+                usuario_id=evento.usuario_id,
+                codigo=erro.codigo,
+                motivo=erro.mensagem,
+            )
+            self.publisher.publicar(CHAVE_ALERTA_FALHOU, falha)
+            return
+        # Qualquer outro erro (ex: usuario_service fora do ar) sobe de propósito:
+        # o Consumidor tenta de novo e, esgotadas as tentativas, manda para a DLQ.
+
+        resultado = AlertaGeradoEvent(
+            solicitacao_id=evento.solicitacao_id,
+            usuario_id=evento.usuario_id,
+            parada_id=alerta.parada.id,
+            parada_nome=alerta.parada.nome,
+            distancia_metros=alerta.distancia_metros,
+            nivel=alerta.nivel,
+            tipo_alerta=alerta.tipo_alerta,
+            mensagem=alerta.mensagem,
+        )
+        self.publisher.publicar(CHAVE_ALERTA_GERADO, resultado)
+
     def _parada_mais_proxima(self, latitude: float, longitude: float) -> tuple[Parada, int]:
         """Devolve a parada mais próxima e a distância até ela em metros inteiros."""
         paradas = self.repository.listar()
@@ -90,6 +143,11 @@ class AlertaService:
         return mais_proxima, round(distancia_ate(mais_proxima))
 
 
+def criar_alerta_service(db: Session) -> AlertaService:
+    """Monta o Service com Repository, Client e Publisher. Usado pelo Controller e pelo Consumer."""
+    return AlertaService(ParadaRepository(db), UsuarioClient(), EventoPublisher())
+
+
 def get_alerta_service(db: Session = Depends(get_db)) -> AlertaService:
-    """Monta o Service com o Repository e o Client para o Controller usar via Depends."""
-    return AlertaService(ParadaRepository(db), UsuarioClient())
+    """Versão para o Controller usar via Depends."""
+    return criar_alerta_service(db)

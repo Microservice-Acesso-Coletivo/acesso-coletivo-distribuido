@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Acesso Coletivo",
-    "description": "Endpoints da acesso_api (porta 8080) na ordem do fluxo de demonstração. Suba os três serviços com run-all.ps1 e execute de cima para baixo.",
+    "description": "Endpoints da acesso_api (porta 8080) na ordem do fluxo de demonstração. Suba o RabbitMQ (docker compose up -d) e os três serviços (run-all.ps1) e execute de cima para baixo. O alerta é assíncrono: o POST responde 202 e o resultado é consultado em seguida.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,7 +10,15 @@
       "value": "http://127.0.0.1:8080"
     },
     {
+      "key": "usuario_service_url",
+      "value": "http://127.0.0.1:8081"
+    },
+    {
       "key": "usuario_id",
+      "value": "1"
+    },
+    {
+      "key": "solicitacao_id",
       "value": "1"
     }
   ],
@@ -134,7 +142,7 @@
           }
         },
         {
-          "name": "06 - Gerar alerta perto do Terminal Dirceu: DESEMBARQUE (201)",
+          "name": "06 - Pedir alerta perto do Terminal Dirceu: DESEMBARQUE (202)",
           "request": {
             "method": "POST",
             "header": [
@@ -144,7 +152,7 @@
               }
             ],
             "url": "{{base_url}}/api/alertas",
-            "description": "Fluxo principal. A API chama o transporte_service, que chama o usuario_service (duas comunicações síncronas). A cerca de 80 m da parada o nível é DESEMBARQUE. O alerta é gravado no histórico.",
+            "description": "Fluxo principal, assíncrono. A API salva o pedido (PENDENTE), publica o evento alerta.solicitado no RabbitMQ e responde 202 na hora, sem esperar o cálculo. O transporte_service consome o evento, calcula e publica alerta.gerado. A cerca de 80 m da parada o nível é DESEMBARQUE.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"usuario_id\": {{usuario_id}},\n  \"latitude\": -5.1062,\n  \"longitude\": -42.7527\n}",
@@ -154,10 +162,24 @@
                 }
               }
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda o id da solicitação para a próxima requisição consultar o andamento.",
+                  "if (pm.response.code === 202) {",
+                  "    pm.collectionVariables.set('solicitacao_id', pm.response.json().solicitacao_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name": "07 - Gerar alerta a 200 m: PROXIMO (201)",
+          "name": "07 - Pedir alerta a 200 m: PROXIMO (202)",
           "request": {
             "method": "POST",
             "header": [
@@ -177,10 +199,24 @@
                 }
               }
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda o id da solicitação para a próxima requisição consultar o andamento.",
+                  "if (pm.response.code === 202) {",
+                  "    pm.collectionVariables.set('solicitacao_id', pm.response.json().solicitacao_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name": "08 - Gerar alerta a 770 m: LONGE (201)",
+          "name": "08 - Pedir alerta a 770 m: LONGE (202)",
           "request": {
             "method": "POST",
             "header": [
@@ -193,22 +229,54 @@
             "description": "Acima de 300 m o nível é LONGE.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"usuario_id\": {{usuario_id}},\n  \"latitude\": -5.1000,\n  \"longitude\": -42.7527\n}",
+              "raw": "{\n  \"usuario_id\": {{usuario_id}},\n  \"latitude\": -5.1,\n  \"longitude\": -42.7527\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda o id da solicitação para a próxima requisição consultar o andamento.",
+                  "if (pm.response.code === 202) {",
+                  "    pm.collectionVariables.set('solicitacao_id', pm.response.json().solicitacao_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09 - Consultar andamento da solicitação (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/alertas/{{solicitacao_id}}",
+            "description": "Consulta a última solicitação feita. Logo após o POST pode aparecer PENDENTE; em cerca de um segundo vira CONCLUIDA, com parada, distância, nível e mensagem."
           }
         },
         {
-          "name": "09 - Ver histórico de alertas (200)",
+          "name": "10 - Ver histórico de alertas (200)",
           "request": {
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/api/alertas/historico?usuario_id={{usuario_id}}",
-            "description": "Lê o banco SQLite da própria acesso_api. Vem do mais recente para o mais antigo."
+            "description": "Lê o banco SQLite da própria acesso_api. O histórico é gravado pelo Consumer quando chega o evento alerta.gerado. Vem do mais recente para o mais antigo."
+          }
+        },
+        {
+          "name": "11 - Atividade de alertas no usuario_service (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{usuario_service_url}}/usuarios/{{usuario_id}}/atividade-alertas",
+            "description": "Publish/Subscribe: o mesmo evento alerta.gerado também chegou ao usuario_service, que atualiza o total de alertas e o último alerta do usuário. Chamada direta ao usuario_service (porta 8081)."
           }
         }
       ]
@@ -217,7 +285,7 @@
       "name": "Erros",
       "item": [
         {
-          "name": "10 - Buscar usuário inexistente (404)",
+          "name": "12 - Buscar usuário inexistente (404)",
           "request": {
             "method": "GET",
             "header": [],
@@ -226,7 +294,7 @@
           }
         },
         {
-          "name": "11 - Gerar alerta para usuário inexistente (404)",
+          "name": "13 - Pedir alerta para usuário inexistente (202)",
           "request": {
             "method": "POST",
             "header": [
@@ -236,7 +304,7 @@
               }
             ],
             "url": "{{base_url}}/api/alertas",
-            "description": "O 404 nasce no usuario_service, passa pelo transporte_service e chega ao cliente pela API.",
+            "description": "A API não valida o usuário: aceita o pedido (202). O erro de negócio aparece depois, de forma assíncrona. Execute a próxima requisição para ver.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"usuario_id\": 9999,\n  \"latitude\": -5.1062,\n  \"longitude\": -42.7527\n}",
@@ -246,10 +314,33 @@
                 }
               }
             }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda o id da solicitação para a próxima requisição consultar o andamento.",
+                  "if (pm.response.code === 202) {",
+                  "    pm.collectionVariables.set('solicitacao_id', pm.response.json().solicitacao_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14 - Consultar a solicitação do usuário inexistente: FALHOU (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/alertas/{{solicitacao_id}}",
+            "description": "O transporte_service não achou o usuário e publicou alerta.falhou. A solicitação fica FALHOU, com codigo_erro USUARIO_NAO_ENCONTRADO e o motivo. Nada é gravado no histórico."
           }
         },
         {
-          "name": "12 - Cadastrar usuário com dados inválidos (422)",
+          "name": "15 - Cadastrar usuário com dados inválidos (422)",
           "request": {
             "method": "POST",
             "header": [
@@ -272,7 +363,7 @@
           }
         },
         {
-          "name": "13 - Gerar alerta com latitude inválida (422)",
+          "name": "16 - Pedir alerta com latitude inválida (422)",
           "request": {
             "method": "POST",
             "header": [
@@ -282,7 +373,7 @@
               }
             ],
             "url": "{{base_url}}/api/alertas",
-            "description": "Latitude fora da faixa de -90 a 90. Barrado no DTO da API.",
+            "description": "Latitude fora da faixa de -90 a 90. Barrado no DTO da API: responde 422 e nada é publicado no broker.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"usuario_id\": {{usuario_id}},\n  \"latitude\": -95,\n  \"longitude\": -42.7527\n}",
@@ -295,7 +386,7 @@
           }
         },
         {
-          "name": "14 - Cadastrar email repetido (409)",
+          "name": "17 - Cadastrar email repetido (409)",
           "request": {
             "method": "POST",
             "header": [
@@ -318,7 +409,7 @@
           }
         },
         {
-          "name": "15 - Login com senha errada (401)",
+          "name": "18 - Login com senha errada (401)",
           "request": {
             "method": "POST",
             "header": [
@@ -341,7 +432,16 @@
           }
         },
         {
-          "name": "16 - Gerar alerta com serviço fora do ar (503)",
+          "name": "19 - Consultar solicitação inexistente (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/alertas/999999",
+            "description": "Não existe solicitação com esse id. Corpo padrão de erro com codigo SOLICITACAO_NAO_ENCONTRADA."
+          }
+        },
+        {
+          "name": "20 - Resiliência: pedir alerta com o transporte_service fora do ar (202)",
           "request": {
             "method": "POST",
             "header": [
@@ -351,7 +451,44 @@
               }
             ],
             "url": "{{base_url}}/api/alertas",
-            "description": "ANTES de enviar, derrube o transporte_service (feche o processo da porta 8082). A API responde 503 com mensagem clara e não grava nada no histórico. Com os três serviços no ar esta requisição responde 201.",
+            "description": "ANTES de enviar, derrube o transporte_service (feche o processo da porta 8082). A API continua respondendo 202: o pedido fica na fila do RabbitMQ. Consulte a solicitação (requisição 09): PENDENTE. Suba o transporte_service de novo e consulte outra vez: CONCLUIDA. Com a comunicação síncrona isto seria um 503.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario_id\": {{usuario_id}},\n  \"latitude\": -5.1062,\n  \"longitude\": -42.7527\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda o id da solicitação para a próxima requisição consultar o andamento.",
+                  "if (pm.response.code === 202) {",
+                  "    pm.collectionVariables.set('solicitacao_id', pm.response.json().solicitacao_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "21 - Pedir alerta com o RabbitMQ fora do ar (503)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/alertas",
+            "description": "ANTES de enviar, derrube o broker: docker compose stop. A API não consegue publicar o evento, marca a solicitação como FALHOU e responde 503 BROKER_INDISPONIVEL. Suba o broker de novo com docker compose start.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"usuario_id\": {{usuario_id}},\n  \"latitude\": -5.1062,\n  \"longitude\": -42.7527\n}",

@@ -29,6 +29,26 @@ class ServicoIndisponivel(ErroDeDominio):
         )
 
 
+class BrokerIndisponivel(ErroDeDominio):
+    # 503 = a API está de pé, mas não conseguiu entregar a mensagem ao RabbitMQ.
+    status_code = 503
+    codigo = "BROKER_INDISPONIVEL"
+
+    def __init__(self):
+        super().__init__(
+            "O serviço de mensageria está fora do ar. "
+            "Não foi possível registrar o pedido. Tente novamente em instantes."
+        )
+
+
+class SolicitacaoNaoEncontrada(ErroDeDominio):
+    status_code = 404
+    codigo = "SOLICITACAO_NAO_ENCONTRADA"
+
+    def __init__(self, solicitacao_id: int):
+        super().__init__(f"Solicitação de alerta com id {solicitacao_id} não encontrada.")
+
+
 class ErroRepassado(Exception):
     """Erro que o serviço de destino devolveu (ex: 404, 409). Guarda status e corpo originais."""
 
